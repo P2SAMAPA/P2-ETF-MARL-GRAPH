@@ -5,7 +5,7 @@ import torch.optim as optim
 
 class MARLEnv:
     def __init__(self, returns_df, lookback=10):
-        self.returns = returns_df.values
+        self.returns = returns_df.values  # numpy array
         self.n_agents = returns_df.shape[1]
         self.lookback = lookback
         self.current_step = lookback
@@ -25,8 +25,11 @@ class MARLEnv:
             self.done = True
             return self._get_state(), 0, self.done, {}
         daily_returns = self.returns[self.current_step, :]
-        if np.sum(actions) > 0:
-            port_ret = np.mean(daily_returns[actions == 1])
+        # Convert actions to numpy boolean mask
+        actions = np.array(actions)
+        buy_mask = actions == 1
+        if buy_mask.any():
+            port_ret = np.mean(daily_returns[buy_mask])
         else:
             port_ret = 0.0
         self.current_step += 1
@@ -49,7 +52,7 @@ class QMixNet(nn.Module):
             agent_qs.append(q)
         return torch.stack(agent_qs)
 
-def train_marl(returns_df, window, n_episodes=100, episode_len=None, lr=1e-3, gamma=0.99, batch_size=None, tau=0.005, **kwargs):
+def train_marl(returns_df, window, n_episodes=100, episode_len=None, lr=1e-3, gamma=0.99, batch_size=None, tau=None):
     lookback = min(window, 10) if window > 10 else window
     env = MARLEnv(returns_df.iloc[-window:], lookback=lookback)
     n_agents = env.n_agents
@@ -63,7 +66,7 @@ def train_marl(returns_df, window, n_episodes=100, episode_len=None, lr=1e-3, ga
         while not done:
             with torch.no_grad():
                 agent_qs = qmix(state)
-                actions = agent_qs.argmax(dim=1).numpy()
+                actions = agent_qs.argmax(dim=1).cpu().numpy()
             next_state, reward, done, _ = env.step(actions)
             total_reward += reward
             state = next_state
@@ -75,4 +78,4 @@ def get_weights(qmix, state):
     with torch.no_grad():
         agent_qs = qmix(state)
         buy_q = agent_qs[:, 1]
-        return buy_q.numpy()
+        return buy_q.cpu().numpy()
