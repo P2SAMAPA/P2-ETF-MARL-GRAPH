@@ -5,8 +5,8 @@ import torch.optim as optim
 
 class MARLEnv:
     def __init__(self, returns_df, lookback=10):
-        self.returns = returns_df.values  # numpy array
-        self.n_agents = returns_df.shape[1]
+        self.returns = returns_df.values  # numpy array (T, n_agents)
+        self.n_agents = self.returns.shape[1]
         self.lookback = lookback
         self.current_step = lookback
         self.done = False
@@ -24,11 +24,12 @@ class MARLEnv:
         if self.current_step >= len(self.returns) - 1:
             self.done = True
             return self._get_state(), 0, self.done, {}
-        daily_returns = self.returns[self.current_step, :]
-        # Convert actions to numpy boolean mask
-        actions = np.array(actions)
+        daily_returns = self.returns[self.current_step, :].flatten()
+        if isinstance(actions, torch.Tensor):
+            actions = actions.numpy()
+        actions = np.asarray(actions).flatten()
         buy_mask = actions == 1
-        if buy_mask.any():
+        if np.any(buy_mask):
             port_ret = np.mean(daily_returns[buy_mask])
         else:
             port_ret = 0.0
