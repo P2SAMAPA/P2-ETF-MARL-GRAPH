@@ -17,13 +17,13 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-st.markdown('<div class="main-header">🤝 Multi-Agent RL (MARL) with Graph Communication</div>', unsafe_allow_html=True)
-st.markdown('<div class="sub-header">QMIX + GNN | CTDE | Graph adjacency from correlation | Portfolio weights | Best window per ETF</div>', unsafe_allow_html=True)
+st.markdown('<div class="main-header">🤝 Multi‑Agent Reinforcement Learning (MARL) Graph Engine</div>', unsafe_allow_html=True)
+st.markdown('<div class="sub-header">QMIX with graph communication | Multi‑window evaluation | Best window per ETF</div>', unsafe_allow_html=True)
 
 st.sidebar.markdown("## 🤝 MARL Graph")
 st.sidebar.markdown(f"**Run Date:** `{st.session_state.get('run_date', 'Not loaded')}`")
 st.sidebar.markdown(f"**Next Trading Day:** `{next_trading_day()}`")
-st.sidebar.markdown("**Method:** QMIX with graph convolutional communication")
+st.sidebar.markdown(f"**Episodes:** {config.N_EPISODES} | **Gamma:** {config.GAMMA}")
 st.sidebar.markdown("**Windows evaluated:** 63, 252, 504, 1008, 2016 days (best per ETF)")
 
 OUTPUT_REPO = config.OUTPUT_REPO
@@ -68,7 +68,7 @@ if "error" in data:
 st.session_state['run_date'] = data['run_date']
 universes = data["universes"]
 
-st.header("🏆 Top ETFs by Learned Portfolio Weight (Higher = Larger Allocation)")
+st.header("🏆 Top ETFs by Learned Q‑Value (Buy Action)")
 
 for universe_name, uni_data in universes.items():
     top_etfs = uni_data.get("top_etfs", [])
@@ -81,7 +81,7 @@ for universe_name, uni_data in universes.items():
             st.markdown(f"""
             <div class="etf-card">
                 <div class="etf-ticker">{etf['ticker']}</div>
-                <div class="etf-score">weight = {etf['weight']:.4f}</div>
+                <div class="etf-score">score = {etf['score']:.4f}</div>
                 <div class="etf-score">best window = {etf.get('best_window', 'N/A')}d</div>
             </div>
             """, unsafe_allow_html=True)
@@ -96,11 +96,11 @@ for universe_name, uni_data in universes.items():
                 else:
                     score = info
                     win = "N/A"
-                rows.append({"ETF": ticker, "Weight": score, "Best Window": win})
+                rows.append({"ETF": ticker, "Score (Q‑value)": score, "Best Window": win})
             df = pd.DataFrame(rows)
-            df["Weight"] = pd.to_numeric(df["Weight"], errors='coerce')
-            df = df.dropna(subset=["Weight"]).sort_values("Weight", ascending=False)
+            df["Score (Q‑value)"] = pd.to_numeric(df["Score (Q‑value)"], errors='coerce')
+            df = df.dropna(subset=["Score (Q‑value)"]).sort_values("Score (Q‑value)", ascending=False)
             st.dataframe(df, use_container_width=True, hide_index=True)
     st.divider()
 
-st.caption("Each ETF is an agent. Agents communicate via a graph (correlation adjacency >0.5). The mixing network QMIX learns to decompose the global reward into individual contributions. The output is the agent's policy weight (softmax of Q-values). Higher weight indicates higher allocation in the learned portfolio.")
+st.caption("Agents (ETFs) learn cooperative buying policies via QMIX. The score is the Q‑value for the 'buy' action from the trained network. Higher score = stronger buy signal. For each ETF, the window that gives the highest score is selected.")
