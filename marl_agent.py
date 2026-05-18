@@ -5,8 +5,8 @@ import torch.optim as optim
 
 class MARLEnv:
     def __init__(self, returns_df, lookback=10):
-        self.returns = returns_df.values  # numpy array (T, n_agents)
-        self.n_agents = self.returns.shape[1]
+        self.returns = returns_df.values  # (T, n_agents)
+        self.n_agents = returns_df.shape[1]
         self.lookback = lookback
         self.current_step = lookback
         self.done = False
@@ -18,16 +18,14 @@ class MARLEnv:
 
     def _get_state(self):
         state = self.returns[self.current_step - self.lookback:self.current_step, :].T
-        return torch.tensor(state, dtype=torch.float32)
+        return torch.tensor(state, dtype=torch.float32)  # (n_agents, lookback)
 
     def step(self, actions):
         if self.current_step >= len(self.returns) - 1:
             self.done = True
-            return self._get_state(), 0, self.done, {}
-        daily_returns = self.returns[self.current_step, :].flatten()
-        if isinstance(actions, torch.Tensor):
-            actions = actions.numpy()
-        actions = np.asarray(actions).flatten()
+            return self._get_state(), 0.0, self.done, {}
+        daily_returns = self.returns[self.current_step, :]  # (n_agents,)
+        # actions is a 1D array (n_agents,)
         buy_mask = actions == 1
         if np.any(buy_mask):
             port_ret = np.mean(daily_returns[buy_mask])
@@ -47,36 +45,42 @@ class QMixNet(nn.Module):
         ])
 
     def forward(self, states):
+        # states: (n_agents, state_dim)
         agent_qs = []
-        for net in self.agent_nets:
-            q = net(states)
+        for i, net in enumerate(self.agent_nets):
+            q = net(states[i])   # pass the i-th agent's state
             agent_qs.append(q)
-        return torch.stack(agent_qs)
+        return torch.stack(agent_qs)  # (n_agents, 2)
 
-def train_marl(returns_df, window, n_episodes=100, episode_len=None, lr=1e-3, gamma=0.99, batch_size=None, tau=None):
+def train_marl(returns_df, window, n_episodes=100, episode_len=None,
+               lr=1e-3, gamma=0.99, batch_size=None, tau=None):
+    # Use lookback = min(window, 10) to ensure enough data
     lookback = min(window, 10) if window > 10 else window
     env = MARLEnv(returns_df.iloc[-window:], lookback=lookback)
     n_agents = env.n_agents
     state_dim = lookback
     qmix = QMixNet(n_agents, state_dim)
     optimizer = optim.Adam(qmix.parameters(), lr=lr)
+
     for ep in range(n_episodes):
         state = env.reset()
         done = False
-        total_reward = 0
+        total_reward = 0.0
         while not done:
             with torch.no_grad():
-                agent_qs = qmix(state)
-                actions = agent_qs.argmax(dim=1).cpu().numpy()
+                agent_qs = qmix(state)          # (n_agents, 2)
+                actions = agent_qs.argmax(dim=1).numpy()  # (n_agents,)
             next_state, reward, done, _ = env.step(actions)
             total_reward += reward
             state = next_state
-        if (ep+1) % 20 == 0:
+        if (ep + 1) % 20 == 0:
             print(f"    Episode {ep+1}/{n_episodes}, total reward: {total_reward:.4f}")
+
     return qmix, None, None
 
 def get_weights(qmix, state):
     with torch.no_grad():
-        agent_qs = qmix(state)
-        buy_q = agent_qs[:, 1]
-        return buy_q.cpu().numpy()
+        agent_qs = qmix(state)      # (n_agents,2)
+        # Use Q-value of 'buy' action as weight
+        buy_q = agent_qs[:, 1]       # (n_agents,)
+        return buy_q.numpy()
