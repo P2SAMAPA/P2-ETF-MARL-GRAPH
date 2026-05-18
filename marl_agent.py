@@ -4,14 +4,8 @@ import torch.nn as nn
 import torch.optim as optim
 
 class MARLEnv:
-    """
-    Multi‑agent environment where each ETF is an agent.
-    State: recent returns of all agents (lookback days)
-    Action: 0 = hold, 1 = buy
-    Reward: portfolio return based on actions
-    """
     def __init__(self, returns_df, lookback=10):
-        self.returns = returns_df.values  # (T, n_agents)
+        self.returns = returns_df.values
         self.n_agents = returns_df.shape[1]
         self.lookback = lookback
         self.current_step = lookback
@@ -49,21 +43,18 @@ class QMixNet(nn.Module):
         ])
 
     def forward(self, states):
-        # states: (n_agents, state_dim)
         agent_qs = []
         for net in self.agent_nets:
             q = net(states)
             agent_qs.append(q)
-        return torch.stack(agent_qs)  # (n_agents, 2)
+        return torch.stack(agent_qs)
 
-def train_marl(returns_df, window, n_episodes=100, episode_len=None, lr=1e-3, gamma=0.99):
-    """
-    Train QMIX on the last `window` days of returns.
-    episode_len is ignored; we run full episodes.
-    """
-    env = MARLEnv(returns_df.iloc[-window:], lookback=10)
+def train_marl(returns_df, window, n_episodes=100, episode_len=None, lr=1e-3, gamma=0.99, batch_size=None):
+    # Use lookback = min(window, 10) to avoid too long sequences
+    lookback = min(window, 10) if window > 10 else window
+    env = MARLEnv(returns_df.iloc[-window:], lookback=lookback)
     n_agents = env.n_agents
-    state_dim = 10
+    state_dim = lookback
     qmix = QMixNet(n_agents, state_dim)
     optimizer = optim.Adam(qmix.parameters(), lr=lr)
     for ep in range(n_episodes):
