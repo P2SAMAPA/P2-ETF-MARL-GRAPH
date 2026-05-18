@@ -49,8 +49,7 @@ class QMixNet(nn.Module):
             agent_qs.append(q)
         return torch.stack(agent_qs)
 
-def train_marl(returns_df, window, n_episodes=100, episode_len=None, lr=1e-3, gamma=0.99, batch_size=None):
-    # Use lookback = min(window, 10) to avoid too long sequences
+def train_marl(returns_df, window, n_episodes=100, episode_len=None, lr=1e-3, gamma=0.99, batch_size=None, tau=0.005, **kwargs):
     lookback = min(window, 10) if window > 10 else window
     env = MARLEnv(returns_df.iloc[-window:], lookback=lookback)
     n_agents = env.n_agents
