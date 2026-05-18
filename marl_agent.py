@@ -2,8 +2,6 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from torch.distributions import Categorical
-from torch_geometric.nn import GCNConv
 
 class MARLEnv:
     """
@@ -60,16 +58,9 @@ class QMixNet(nn.Module):
     def forward(self, states):
         # states: (n_agents, state_dim)
         agent_qs = []
-        agent_hiddens = []
         for i, net in enumerate(self.agent_nets):
             q = net(states[i])
             agent_qs.append(q)
-            # hidden before last layer? use second last layer output
-            # For simplicity, use the output of the ReLU before last linear
-            # We'll take the 2nd layer output (hidden_dim)
-            # But we need to modify: we store intermediate
-            # Simpler: use the output of the last ReLU as hidden
-            # Let's not complicate; use agent Q values only
         return torch.stack(agent_qs)  # (n_agents, 2)
 
 def train_marl(returns_df, window, n_episodes=100, lookback=10, lr=1e-3, gamma=0.99):
@@ -87,13 +78,10 @@ def train_marl(returns_df, window, n_episodes=100, lookback=10, lr=1e-3, gamma=0
         done = False
         total_reward = 0
         while not done:
-            # Greedy action selection
             with torch.no_grad():
                 agent_qs = qmix(state)  # (n_agents, 2)
                 actions = agent_qs.argmax(dim=1).numpy()
             next_state, reward, done, _ = env.step(actions)
-            # Compute target Q values (simplified: use reward)
-            # For QMIX we need a mixing network, but we'll approximate
             total_reward += reward
             state = next_state
         if (ep+1) % 20 == 0:
@@ -101,10 +89,7 @@ def train_marl(returns_df, window, n_episodes=100, lookback=10, lr=1e-3, gamma=0
     return qmix, None, None
 
 def get_weights(qmix, state):
-    """Get final actions (buy probabilities or discrete actions)."""
     with torch.no_grad():
-        agent_qs = qmix(state)  # (n_agents, 2)
-        # Use the Q‑value for 'buy' action as score
+        agent_qs = qmix(state)
         buy_q = agent_qs[:, 1]
-        # Normalise to probabilities (or return raw)
         return buy_q.numpy()
