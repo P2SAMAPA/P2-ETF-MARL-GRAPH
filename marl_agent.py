@@ -5,7 +5,7 @@ import torch.optim as optim
 
 class MARLEnv:
     def __init__(self, returns_df, lookback=10):
-        self.returns = returns_df.values
+        self.returns = returns_df.values  # (T, n_agents)
         self.n_agents = returns_df.shape[1]
         self.lookback = lookback
         self.current_step = lookback
@@ -18,7 +18,7 @@ class MARLEnv:
 
     def _get_state(self):
         state = self.returns[self.current_step - self.lookback:self.current_step, :].T
-        return torch.tensor(state, dtype=torch.float32)
+        return torch.tensor(state, dtype=torch.float32)  # (n_agents, lookback)
 
     def step(self, actions):
         if self.current_step >= len(self.returns) - 1:
@@ -44,7 +44,6 @@ class QMixNet(nn.Module):
         ])
 
     def forward(self, states):
-        # states: (n_agents, state_dim)
         agent_qs = []
         for i, net in enumerate(self.agent_nets):
             q = net(states[i])
@@ -59,7 +58,6 @@ def train_marl(returns_df, window, n_episodes=100, episode_len=None,
     state_dim = lookback
     qmix = QMixNet(n_agents, state_dim)
     optimizer = optim.Adam(qmix.parameters(), lr=lr)
-
     for ep in range(n_episodes):
         state = env.reset()
         done = False
@@ -73,16 +71,14 @@ def train_marl(returns_df, window, n_episodes=100, episode_len=None,
             state = next_state
         if (ep+1) % 20 == 0:
             print(f"    Episode {ep+1}/{n_episodes}, total reward: {total_reward:.4f}")
-    # After training, compute the buy Q-values for the final state (the last state of the environment)
-    # Use the last state of the training window
-    final_state = env.reset()  # reset to beginning? Actually we want the most recent state.
-    # We'll just take the state from the last step of the environment? Simpler: take the last state after the last episode.
-    # But the environment after the last episode is at the end. We'll re-run one step.
-    # For simplicity, we'll use the state from the last episode's final state (which is after the last step).
-    # However, we can just compute using the last `lookback` days of the data.
-    last_obs = returns_df.iloc[-lookback:].values.T
-    last_state = torch.tensor(last_obs, dtype=torch.float32)  # (n_agents, lookback)
+    # After training, get the weights (buy Q-values) from the final state
+    state = env.reset()
     with torch.no_grad():
-        agent_qs = qmix(last_state)
-        buy_q = agent_qs[:, 1].numpy()  # (n_agents,)
-    return buy_q
+        agent_qs = qmix(state)
+        weights = agent_qs[:, 1].numpy()  # buy Q-values
+    return weights
+
+def get_weights(qmix, state):
+    with torch.no_grad():
+        agent_qs = qmix(state)
+        return agent_qs[:, 1].numpy()
